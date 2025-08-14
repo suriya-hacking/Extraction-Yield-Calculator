@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Drip Extraction Yield Calculator</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --text: #e7e9ee;
+      --muted: #a6adbb;
+      --accent: #6ea8fe;
+      --good: #3ccf91;
+      --warn: #f5c451;
+      --bad: #ff6b6b;
+      --grid: #2a2f3a;
+      --target1: #b38cff; /* purple */
+      --target2: #ff9f6e; /* orange */
+      --glass: rgba(17, 20, 28, .82);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      background: var(--bg); color: var(--text);
+    }
+    .app { max-width: 1100px; margin: 0 auto; display: grid; gap: 16px; }
+    .card { background: var(--panel); border: 1px solid #222834; border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    p { color: var(--muted); margin: 6px 0 0; }
+
+    .controls { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .control { display:grid; gap:10px; align-items: center; background: #12151c; border:1px solid #222834; padding:12px; border-radius: 12px; }
+    .row { display:flex; align-items:center; gap:12px; justify-content: space-between; flex-wrap: wrap; }
+    .label { font-weight: 600; }
+    .value { color: var(--accent); font-variant-numeric: tabular-nums; min-width: 120px; text-align:right; }
+    input[type="range"] { width: 100%; touch-action: pan-y; }
+    input[type="number"] { width: 120px; background:#0e1117; color:var(--text); border:1px solid #2a2f3a; border-radius:10px; padding:10px 12px; font-size:16px; }
+
+    /* Larger, finger-friendly sliders */
+    input[type="range"] { -webkit-appearance: none; height: 34px; background: transparent; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 6px; background:#2a2f3a; border-radius: 999px; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; margin-top: -14px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+    input[type="range"]::-moz-range-track { height: 6px; background:#2a2f3a; border-radius: 999px; }
+    input[type="range"]::-moz-range-thumb { width: 28px; height: 28px; border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+
+    details { border: 1px dashed #2a2f3a; border-radius: 12px; padding: 10px 12px; }
+    details > summary { cursor: pointer; color: var(--muted); font-weight:600; margin: -10px -12px 10px; padding: 10px 12px; }
+
+    .result { display:grid; grid-template-columns: 1fr; gap:8px; align-items:center; }
+    .big { font-size: 40px; font-weight: 800; letter-spacing: .5px; }
+    .badge { display:inline-flex; gap:8px; align-items:center; padding: 6px 10px; border-radius: 999px; background:#0f1320; color:#b9c7ff; border:1px solid #283055; font-size: 12px; }
+
+    .note { color: var(--muted); font-size: 13px; }
+    .warning { color: var(--warn); }
+
+    .layout { display:grid; grid-template-columns: 1fr; gap:16px; }
+
+    /* SVG container */
+    .chart-card { padding: 12px; }
+    #chart { width: 100%; height: 320px; display:block; }
+
+    .legend { display:flex; gap:12px; align-items:center; flex-wrap:wrap; color: var(--muted); font-size: 13px; margin-top:8px; }
+    .swatch { width:14px; height:10px; border-radius: 2px; display:inline-block; }
+
+    /* Sticky top result bar */
+    .sticky-result {
+      position: sticky; top: 0; z-index: 30; backdrop-filter: blur(8px);
+      margin: -12px 0 8px; padding: 12px 12px calc(12px + env(safe-area-inset-top));
+      background: var(--glass); border: 1px solid #1d2230; border-radius: 12px;
+      display:flex; align-items:center; justify-content: space-between; gap:10px;
+    }
+    .sticky-result .ey { font-size: 22px; font-weight: 800; }
+
+    /* Mobile quick controls dock */
+    .dock {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+      background: var(--glass); border-top:1px solid #1d2230; backdrop-filter: blur(10px);
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+      display: grid; gap:10px;
+    }
+    .dock .row { gap:10px; }
+    .dock .label { font-size: 12px; color: var(--muted); }
+    .dock .value { min-width:auto; font-size: 14px; }
+    .dock .inline { display:grid; grid-template-columns: 1fr; gap:6px; }
+    .hide-on-desktop { display: block; }
+
+    /* Desktop layout */
+    @media (min-width: 880px) {
+      body { padding: 24px; }
+      .layout { grid-template-columns: 1.4fr .8fr; }
+      .card { padding: 20px; }
+      #chart { height: 280px; }
+      .hide-on-desktop { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="sticky-result">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span class="badge">สูตร: EY% = TDS% × (Ratio − Absorption)</span>
+      </div>
+      <div class="ey"><span id="eyTop">19.50%</span> <span id="zoneTop" class="note"></span></div>
+    </div>
+
+    <div class="card">
+      <h1>Drip Extraction Yield Calculator</h1>
+      <p>เวอร์ชันมือถือ: ใช้งานง่ายด้วย <strong>Quick Controls</strong> ด้านล่างจอ เลื่อนสไลเดอร์ได้แม้ถือด้วยมือเดียว</p>
+    </div>
+
+    <div class="layout">
+      <div class="card chart-card">
+        <svg id="chart" viewBox="0 0 980 320" preserveAspectRatio="xMidYMid meet" aria-label="Extraction Yield chart"></svg>
+        <div class="legend">
+          <span class="swatch" style="background:#3ccf91;"></span> ช่วงนิยม (18–22% EY)
+          <span class="swatch" style="background:#f5c451;"></span> ต่ำ/สูงกว่าช่วงนิยม
+          <span class="swatch" style="background:var(--target1);"></span> เส้นเป้าหมาย 1
+          <span class="swatch" style="background:var(--target2);"></span> เส้นเป้าหมาย 2
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="controls">
+          <div class="control">
+            <div class="row"><div class="label">สัดส่วน (Ratio)</div><div class="value"><span id="ratioLabel">1:15.0</span></div></div>
+            <input id="ratio" type="range" min="5" max="25" step="0.1" value="15" />
+            <div class="row">
+              <small class="note">ทั่วไปสำหรับดริป: 1:12–1:18</small>
+              <div><label class="note">ใส่ค่าเอง: </label><input id="ratioNum" type="number" min="1" max="40" step="0.1" value="15" /></div>
+            </div>
+          </div>
+
+          <div class="control">
+            <div class="row"><div class="label">เปอร์เซ็นต์ TDS (%)</div><div class="value"><span id="tdsLabel">1.50%</span></div></div>
+            <input id="tds" type="range" min="0" max="3.5" step="0.01" value="1.5" />
+            <div class="row">
+              <small class="note">ปกติฟิลเตอร์: 1.15–1.65%</small>
+              <div><label class="note">ใส่ค่าเอง: </label><input id="tdsNum" type="number" min="0" max="10" step="0.01" value="1.5" /></div>
+            </div>
+          </div>
+
+          <details>
+            <summary>ตัวเลือกขั้นสูง (Advanced)</summary>
+            <div class="control">
+              <div class="row"><div class="label">Absorption (g/g)</div><div class="value"><span id="absLabel">2.00 g/g</span></div></div>
+              <input id="abs" type="range" min="1.6" max="2.6" step="0.05" value="2.0" />
+              <div class="row">
+                <small class="note">โดยประมาณสำหรับดริป ≈ 2.0 g/g</small>
+                <div><label class="note">ใส่ค่าเอง: </label><input id="absNum" type="number" min="1.0" max="3.0" step="0.01" value="2.0" /></div>
+              </div>
+            </div>
+
+            <div class="control">
+              <div class="row"><div class="label">แกน X (EY%) ช่วงที่แสดง</div><div class="value"><span id="xrangeLabel">10–35%</span></div></div>
+              <div class="row" style="gap:8px; justify-content:flex-start">
+                <label class="note">Min:</label><input id="xmin" type="number" min="0" max="60" step="0.5" value="10" />
+                <label class="note">Max:</label><input id="xmax" type="number" min="5" max="70" step="0.5" value="35" />
+              </div>
+              <small class="note">ตั้งช่วงให้ครอบคลุมค่าเป้าหมายและค่า EY ที่คำนวณได้</small>
+            </div>
+
+            <div class="control">
+              <div class="row"><div class="label">เส้นเป้าหมาย (Target EY%)</div><div class="value"><span id="targetLabel">20.0%, 21.5%</span></div></div>
+              <div class="row" style="gap:8px; justify-content:flex-start">
+                <label class="note">Target 1:</label><input id="target1" type="number" min="0" max="70" step="0.1" value="20.0" />
+                <label class="note">Target 2:</label><input id="target2" type="number" min="0" max="70" step="0.1" value="21.5" />
+              </div>
+              <small class="note">ปล่อยว่าง (NaN) ได้หากไม่ต้องการเส้นบางเส้น</small>
+            </div>
+          </details>
+
+          <div class="control result">
+            <div class="badge">สูตร: EY% = TDS% × (Ratio − Absorption)</div>
+            <div style="display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;">
+              <div class="big" id="ey">19.50%</div>
+              <div id="zone" class="note"></div>
+            </div>
+            <div id="warn" class="note warning" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Controls dock for mobile -->
+  <div class="dock hide-on-desktop" role="region" aria-label="Quick controls">
+    <div class="row" style="justify-content: space-between; align-items:center;">
+      <div class="label">Quick Controls</div>
+      <a href="#" id="toControls" class="note">ตั้งค่าละเอียด ↑</a>
+    </div>
+    <div class="inline">
+      <div class="row" style="justify-content: space-between;"><div class="label">Ratio</div><div class="value"><span id="qRatioLabel">1:15.0</span></div></div>
+      <input id="qRatio" type="range" min="5" max="25" step="0.1" value="15" />
+    </div>
+    <div class="inline">
+      <div class="row" style="justify-content: space-between;"><div class="label">%TDS</div><div class="value"><span id="qTDSLabel">1.50%</span></div></div>
+      <input id="qTDS" type="range" min="0" max="3.5" step="0.01" value="1.5" />
+    </div>
+  </div>
+
+  <script>
+    // --- Elements ---
+    const ratio = document.getElementById('ratio');
+    const ratioNum = document.getElementById('ratioNum');
+    const ratioLabel = document.getElementById('ratioLabel');
+
+    const tds = document.getElementById('tds');
+    const tdsNum = document.getElementById('tdsNum');
+    const tdsLabel = document.getElementById('tdsLabel');
+
+    const abs = document.getElementById('abs');
+    const absNum = document.getElementById('absNum');
+    const absLabel = document.getElementById('absLabel');
+
+    const xminEl = document.getElementById('xmin');
+    const xmaxEl = document.getElementById('xmax');
+    const xrangeLabel = document.getElementById('xrangeLabel');
+
+    const target1El = document.getElementById('target1');
+    const target2El = document.getElementById('target2');
+    const targetLabel = document.getElementById('targetLabel');
+
+    const eyOut = document.getElementById('ey');
+    const zoneOut = document.getElementById('zone');
+    const warn = document.getElementById('warn');
+
+    const eyTop = document.getElementById('eyTop');
+    const zoneTop = document.getElementById('zoneTop');
+
+    const svg = document.getElementById('chart');
+
+    // Quick controls
+    const qRatio = document.getElementById('qRatio');
+    const qRatioLabel = document.getElementById('qRatioLabel');
+    const qTDS = document.getElementById('qTDS');
+    const qTDSLabel = document.getElementById('qTDSLabel');
+    const toControls = document.getElementById('toControls');
+
+    // Runtime axis state (editable)
+    let XMIN = parseFloat(xminEl.value);
+    let XMAX = parseFloat(xmaxEl.value);
+
+    // --- Helpers ---
+    function clamp(v, a, b){ return Math.min(Math.max(v, a), b); }
+    function fmtPct(n){ return n.toFixed(2).replace(/\.00$/, '') + '%'; }
+
+    function layout(){
+      return { padding:{l:90, r:30, t:28, b:56}, W: svg.viewBox.baseVal.width, H: svg.viewBox.baseVal.height };
+    }
+    function mapX(val){
+      const { padding, W } = layout();
+      return padding.l + (clamp(val, XMIN, XMAX) - XMIN) / (XMAX - XMIN) * (W - padding.l - padding.r);
+    }
+    function mapY_TDS(val){ // 0–3.5% scale
+      const { padding, H } = layout();
+      const TMIN = 0, TMAX = 3.5;
+      const innerH = H - padding.t - padding.b;
+      return padding.t + (1 - (clamp(val, TMIN, TMAX) - TMIN)/(TMAX-TMIN)) * innerH;
+    }
+
+    // --- Draw static chart ---
+    function drawStatic(){
+      const { padding, W, H } = layout();
+      svg.innerHTML = '';
+      const axisY = H - padding.b;
+
+      // Background bands by EY
+      const band = (x0, x1, color, op=.18) => {
+        const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        rect.setAttribute('x', mapX(x0));
+        rect.setAttribute('y', padding.t);
+        rect.setAttribute('width', Math.max(0, mapX(x1) - mapX(x0)));
+        rect.setAttribute('height', axisY - padding.t);
+        rect.setAttribute('fill', color);
+        rect.setAttribute('opacity', op);
+        svg.appendChild(rect);
+      };
+      band(XMIN, Math.min(18, XMAX), '#f5c451');
+      band(Math.max(18, XMIN), Math.min(22, XMAX), '#3ccf91');
+      band(Math.max(22, XMIN), XMAX, '#f5c451');
+
+      // X axis line (EY)
+      const axis = document.createElementNS('http://www.w3.org/2000/svg','line');
+      axis.setAttribute('x1', mapX(XMIN));
+      axis.setAttribute('x2', mapX(XMAX));
+      axis.setAttribute('y1', axisY);
+      axis.setAttribute('y2', axisY);
+      axis.setAttribute('stroke', '#3b4252');
+      axis.setAttribute('stroke-width', 2);
+      svg.appendChild(axis);
+
+      // X ticks
+      const step = chooseTickStep(XMIN, XMAX);
+      for (let v = Math.ceil(XMIN/step)*step; v <= XMAX + 1e-9; v += step){
+        const x = mapX(v);
+        const tick = document.createElementNS('http://www.w3.org/2000/svg','line');
+        tick.setAttribute('x1', x); tick.setAttribute('x2', x);
+        tick.setAttribute('y1', axisY); tick.setAttribute('y2', axisY+8);
+        tick.setAttribute('stroke', '#475063'); tick.setAttribute('stroke-width', 1.5);
+        svg.appendChild(tick);
+        const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+        label.textContent = String(Math.round(v*10)/10);
+        label.setAttribute('x', x); label.setAttribute('y', axisY + 24);
+        label.setAttribute('fill', '#a6adbb'); label.setAttribute('font-size', '12'); label.setAttribute('text-anchor', 'middle');
+        svg.appendChild(label);
+      }
+
+      // Y axis for %TDS (left)
+      const yAxis = document.createElementNS('http://www.w3.org/2000/svg','line');
+      yAxis.setAttribute('x1', padding.l); yAxis.setAttribute('x2', padding.l);
+      yAxis.setAttribute('y1', padding.t); yAxis.setAttribute('y2', axisY);
+      yAxis.setAttribute('stroke', '#3b4252'); yAxis.setAttribute('stroke-width', 2);
+      svg.appendChild(yAxis);
+
+      const yTicks = [0,0.5,1,1.5,2,2.5,3,3.5];
+      yTicks.forEach(v=>{
+        const y = mapY_TDS(v);
+        // grid line
+        const gl = document.createElementNS('http://www.w3.org/2000/svg','line');
+        gl.setAttribute('x1', mapX(XMIN)); gl.setAttribute('x2', mapX(XMAX));
+        gl.setAttribute('y1', y); gl.setAttribute('y2', y);
+        gl.setAttribute('stroke', '#263042'); gl.setAttribute('stroke-width', 1); gl.setAttribute('opacity', .5);
+        svg.appendChild(gl);
+        // tick
+        const t = document.createElementNS('http://www.w3.org/2000/svg','line');
+        t.setAttribute('x1', padding.l-8); t.setAttribute('x2', padding.l);
+        t.setAttribute('y1', y); t.setAttribute('y2', y);
+        t.setAttribute('stroke', '#475063'); t.setAttribute('stroke-width', 1.5);
+        svg.appendChild(t);
+        // label
+        const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+        lbl.textContent = v.toFixed(1);
+        lbl.setAttribute('x', padding.l-12); lbl.setAttribute('y', y+4);
+        lbl.setAttribute('fill', '#a6adbb'); lbl.setAttribute('font-size', '12'); lbl.setAttribute('text-anchor', 'end');
+        svg.appendChild(lbl);
+      });
+
+      // Titles
+      const titleX = document.createElementNS('http://www.w3.org/2000/svg','text');
+      titleX.textContent = 'Extraction Yield (%)';
+      titleX.setAttribute('x', (mapX(XMIN)+mapX(XMAX))/2);
+      titleX.setAttribute('y', 20);
+      titleX.setAttribute('fill', '#e7e9ee'); titleX.setAttribute('font-size', '14'); titleX.setAttribute('font-weight', '700'); titleX.setAttribute('text-anchor', 'middle');
+      svg.appendChild(titleX);
+
+      const titleY = document.createElementNS('http://www.w3.org/2000/svg','text');
+      titleY.textContent = '%TDS';
+      titleY.setAttribute('transform', `translate(${padding.l-48}, ${(padding.t + axisY)/2}) rotate(-90)`);
+      titleY.setAttribute('fill', '#e7e9ee'); titleY.setAttribute('font-size', '12'); titleY.setAttribute('text-anchor', 'middle');
+      svg.appendChild(titleY);
+
+      // Dynamic groups
+      const gMarker = document.createElementNS('http://www.w3.org/2000/svg','g'); gMarker.setAttribute('id', 'marker'); svg.appendChild(gMarker);
+      const gTargets = document.createElementNS('http://www.w3.org/2000/svg','g'); gTargets.setAttribute('id', 'targets'); svg.appendChild(gTargets);
+      const gTDS = document.createElementNS('http://www.w3.org/2000/svg','g'); gTDS.setAttribute('id', 'tdsLine'); svg.appendChild(gTDS);
+    }
+
+    function chooseTickStep(min, max){
+      const span = max - min;
+      if (span <= 10) return 1;
+      if (span <= 20) return 2;
+      if (span <= 35) return 5;
+      return 10;
+    }
+
+    function updateMarker(ey){
+      const { padding, H } = layout();
+      const axisY = H - padding.b;
+      const x = mapX(ey);
+      const g = document.getElementById('marker');
+      g.innerHTML = '';
+
+      const v = document.createElementNS('http://www.w3.org/2000/svg','line');
+      v.setAttribute('x1', x); v.setAttribute('x2', x);
+      v.setAttribute('y1', padding.t); v.setAttribute('y2', axisY);
+      v.setAttribute('stroke', '#6ea8fe'); v.setAttribute('stroke-width', 2); v.setAttribute('stroke-dasharray', '4 3');
+      g.appendChild(v);
+
+      const c = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx', x); c.setAttribute('cy', axisY);
+      c.setAttribute('r', 6); c.setAttribute('fill', '#6ea8fe'); c.setAttribute('stroke', 'white'); c.setAttribute('stroke-width', 1);
+      g.appendChild(c);
+
+      const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.textContent = ey.toFixed(2) + '%';
+      txt.setAttribute('x', x); txt.setAttribute('y', padding.t + 18);
+      txt.setAttribute('fill', '#cfe1ff'); txt.setAttribute('font-size', '13'); txt.setAttribute('font-weight', '700'); txt.setAttribute('text-anchor', 'middle');
+      g.appendChild(txt);
+    }
+
+    function updateTargets(){
+      const g = document.getElementById('targets');
+      g.innerHTML = '';
+      const vals = [parseFloat(target1El.value), parseFloat(target2El.value)];
+      const colors = ['var(--target1)','var(--target2)'];
+
+      vals.forEach((v,i)=>{
+        if (!isFinite(v)) return; // allow blank
+        if (v < XMIN || v > XMAX) return; // out of view
+        const x = mapX(v);
+        const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+        const { padding, H } = layout();
+        const axisY = H - padding.b;
+        line.setAttribute('x1', x); line.setAttribute('x2', x);
+        line.setAttribute('y1', padding.t); line.setAttribute('y2', axisY);
+        line.setAttribute('stroke', colors[i]); line.setAttribute('stroke-width', 2); line.setAttribute('stroke-dasharray', '6 4');
+        g.appendChild(line);
+
+        const cap = document.createElementNS('http://www.w3.org/2000/svg','text');
+        cap.textContent = `Target ${i+1}: ${v.toFixed(1)}%`;
+        cap.setAttribute('x', x); cap.setAttribute('y', axisY + 40);
+        cap.setAttribute('fill', '#d6d9e0'); cap.setAttribute('font-size', '11'); cap.setAttribute('text-anchor', 'middle');
+        g.appendChild(cap);
+      });
+
+      const textVals = vals.filter(x=>isFinite(x)).map(x=>x.toFixed(1)+'%');
+      targetLabel.textContent = textVals.join(', ') || '—';
+    }
+
+    function updateTDSLine(){
+      const g = document.getElementById('tdsLine');
+      g.innerHTML = '';
+      const y = mapY_TDS(parseFloat(tds.value));
+      const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+      l.setAttribute('x1', mapX(XMIN)); l.setAttribute('x2', mapX(XMAX));
+      l.setAttribute('y1', y); l.setAttribute('y2', y);
+      l.setAttribute('stroke', '#6ea8fe'); l.setAttribute('stroke-width', 2); l.setAttribute('stroke-dasharray', '4 3'); l.setAttribute('opacity', .9);
+      g.appendChild(l);
+
+      const tag = document.createElementNS('http://www.w3.org/2000/svg','text');
+      tag.textContent = `${parseFloat(tds.value).toFixed(2)}% TDS`;
+      tag.setAttribute('x', mapX(XMIN) + 6); tag.setAttribute('y', y - 6);
+      tag.setAttribute('fill', '#cfe1ff'); tag.setAttribute('font-size', '12'); tag.setAttribute('font-weight', '700'); tag.setAttribute('text-anchor', 'start');
+      g.appendChild(tag);
+    }
+
+    // --- Compute EY ---
+    function compute(){
+      // Sync labels
+      const R = parseFloat(ratio.value);
+      const T = parseFloat(tds.value);
+      const A = parseFloat(abs.value);
+      ratioLabel.textContent = `1:${R.toFixed(1)}`;
+      tdsLabel.textContent = `${T.toFixed(2)}%`;
+      absLabel.textContent = `${A.toFixed(2)} g/g`;
+      qRatioLabel.textContent = `1:${R.toFixed(1)}`;
+      qTDSLabel.textContent = `${T.toFixed(2)}%`;
+
+      // Axis range from inputs
+      let xmin = parseFloat(xminEl.value), xmax = parseFloat(xmaxEl.value);
+      if (!isFinite(xmin)) xmin = 10; if (!isFinite(xmax)) xmax = 35;
+      if (xmax <= xmin) xmax = xmin + 1; // ensure valid span
+      XMIN = xmin; XMAX = xmax; xrangeLabel.textContent = `${xmin.toFixed(0)}–${xmax.toFixed(0)}%`;
+
+      drawStatic(); // redraw grid with new range
+
+      // Beverage per dose approximation
+      const bevPerDose = R - A; // g beverage per g coffee
+
+      let message = '';
+      if (bevPerDose <= 0) {
+        message = 'คำเตือน: Ratio ต่ำกว่าหรือเท่ากับ Absorption ทำให้ปริมาณเครื่องดื่มไม่สมเหตุ ตรวจสอบสัดส่วนอีกครั้ง';
+      }
+      warn.style.display = message ? 'block' : 'none';
+      warn.textContent = message;
+
+      const EY = Math.max(0, T * bevPerDose); // EY% (T is already in %)
+      const eyTxt = EY.toFixed(2) + '%';
+      eyOut.textContent = eyTxt;
+      eyTop.textContent = eyTxt;
+
+      let zone = '';
+      if (EY < 18) zone = 'ต่ำกว่าช่วงนิยม';
+      else if (EY <= 22) zone = 'อยู่ในช่วงนิยม';
+      else zone = 'สูงกว่าช่วงนิยม';
+      zoneOut.textContent = zone;
+      zoneTop.textContent = `• ${zone}`;
+
+      updateMarker(EY);
+      updateTargets();
+      updateTDSLine();
+    }
+
+    // Sync range <-> number inputs
+    function bindPair(rangeEl, numEl, onChange){
+      const sync = (src, dst) => () => { dst.value = src.value; onChange(); };
+      rangeEl.addEventListener('input', sync(rangeEl, numEl));
+      numEl.addEventListener('input', () => {
+        const v = parseFloat(numEl.value);
+        if (!isFinite(v)) return;
+        rangeEl.value = v; onChange();
+      });
+    }
+
+    // Bind changes
+    function bindInput(el, handler){ el.addEventListener('input', handler); }
+
+    // Quick controls sync (two-way)
+    function syncQuick(){
+      // master -> quick
+      qRatio.value = ratio.value; qTDS.value = tds.value;
+      qRatioLabel.textContent = `1:${parseFloat(qRatio.value).toFixed(1)}`;
+      qTDSLabel.textContent = `${parseFloat(qTDS.value).toFixed(2)}%`;
+    }
+    ratio.addEventListener('input', syncQuick);
+    tds.addEventListener('input', syncQuick);
+
+    qRatio.addEventListener('input', ()=>{ ratio.value = qRatio.value; ratioNum.value = qRatio.value; compute(); });
+    qTDS.addEventListener('input', ()=>{ tds.value = qTDS.value; tdsNum.value = qTDS.value; compute(); });
+
+    // Scroll to controls
+    toControls.addEventListener('click', (e)=>{
+      e.preventDefault();
+      document.querySelector('.controls')?.scrollIntoView({behavior:'smooth', block:'start'});
+    });
+
+    // Init
+    drawStatic();
+    bindPair(ratio, ratioNum, compute);
+    bindPair(tds, tdsNum, compute);
+    bindPair(abs, absNum, compute);
+
+    ;[xminEl, xmaxEl, target1El, target2El].forEach(el=>bindInput(el, compute));
+
+    compute();
+    syncQuick();
+    window.addEventListener('resize', () => { drawStatic(); compute(); });
+  </script>
+</body>
+</html>
